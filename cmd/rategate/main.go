@@ -3,15 +3,15 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("{\"status\":\"ok\"}\n"))
-	})
+	mux, err := newHandler(os.Getenv("UPSTREAM_URL"))
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	server := &http.Server{
 		Addr:              ":8080",
