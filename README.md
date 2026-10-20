@@ -9,6 +9,7 @@ RateGate is an HTTP gateway project written in Go.
 - HTTP server timeouts.
 - Reverse proxy forwarding requests to a configured upstream, preserving the method, path, query and body.
 - `502 Bad Gateway` when the upstream cannot be reached.
+- Upstream request deadlines with `504 Gateway Timeout` if the deadline expires before response headers arrive.
 - Configurable per-key token bucket rate limiting, defaulting to 10 requests per second with a burst of 10.
 - `429 Too Many Requests` with `Retry-After` when a key exceeds its limit.
 
@@ -27,6 +28,14 @@ UPSTREAM_URL=http://localhost:9000 RATE_LIMIT=5 RATE_BURST=20 go run ./cmd/rateg
 ```
 
 `RATE_LIMIT` is the number of tokens replenished per second. `RATE_BURST` is the maximum token count, also available immediately for a new key. Each request consumes one token. Both settings default to `10` when unset or empty and accept integers from `1` to `1000000`. Invalid values stop the server at startup.
+
+`UPSTREAM_TIMEOUT` sets the total upstream request deadline, defaulting to `5s` when unset or empty. It accepts positive Go durations up to `1m`, for example `500ms` or `10s`. Invalid values stop the server at startup.
+
+```sh
+UPSTREAM_URL=http://localhost:9000 UPSTREAM_TIMEOUT=3s go run ./cmd/rategate
+```
+
+The deadline includes sending the request and reading the response body. If it expires after response headers have been sent to the client, the response is interrupted; its status cannot be changed to `504`. Client cancellation also cancels the upstream request.
 
 Check the server:
 

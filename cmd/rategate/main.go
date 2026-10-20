@@ -12,7 +12,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mux, err := newHandler(cfg.upstream, cfg.rate, cfg.burst)
+	mux, err := newHandler(cfg.upstream, cfg.rate, cfg.burst, cfg.upstreamTimeout)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func main() {
 		Addr:              ":8080",
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      10 * time.Second,
+		WriteTimeout:      cfg.upstreamTimeout + 5*time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 

@@ -116,7 +116,7 @@ func TestRateLimitedProxy(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer upstream.Close()
-	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst)
+	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst, defaultUpstreamTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}

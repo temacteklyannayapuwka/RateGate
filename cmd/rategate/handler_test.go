@@ -1,12 +1,79 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestUpstreamTimeout(t *testing.T) {
+	canceled := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer upstream.Close()
+	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst, 100*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/slow", nil)
+	req.Header.Set("X-API-Key", "test-client")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusGatewayTimeout || response.Body.String() != "Gateway Timeout\n" {
+		t.Fatalf("unexpected timeout response: %d %s", response.Code, response.Body)
+	}
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("upstream request was not canceled")
+	}
+}
+
+func TestClientCancellationReachesUpstream(t *testing.T) {
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer upstream.Close()
+	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst, defaultUpstreamTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/slow", nil).WithContext(ctx)
+	req.Header.Set("X-API-Key", "test-client")
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+		close(done)
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("upstream request did not start")
+	}
+	cancel()
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("client cancellation did not reach upstream")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("proxy did not return after cancellation")
+	}
+}
 
 func TestProxyForwardsRequestAndResponse(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +96,7 @@ func TestProxyForwardsRequestAndResponse(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler, err := newHandler(upstream.URL+"/base", defaultRate, defaultBurst)
+	handler, err := newHandler(upstream.URL+"/base", defaultRate, defaultBurst, defaultUpstreamTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +117,7 @@ func TestHealthDoesNotCallUpstream(t *testing.T) {
 		t.Error("health request reached upstream")
 	}))
 	defer upstream.Close()
-	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst)
+	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst, defaultUpstreamTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +131,7 @@ func TestHealthDoesNotCallUpstream(t *testing.T) {
 func TestUnavailableUpstream(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	upstream.Close()
-	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst)
+	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst, defaultUpstreamTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +147,7 @@ func TestUnavailableUpstream(t *testing.T) {
 func TestInvalidUpstream(t *testing.T) {
 	for _, raw := range []string{"", "/relative", "localhost:9000", "ftp://localhost", "http://", "http://%", "http://user:pass@localhost", "http://localhost/#fragment"} {
 		t.Run(raw, func(t *testing.T) {
-			if _, err := newHandler(raw, defaultRate, defaultBurst); err == nil {
+			if _, err := newHandler(raw, defaultRate, defaultBurst, defaultUpstreamTimeout); err == nil {
 				t.Fatalf("accepted invalid upstream %q", raw)
 			}
 		})

@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLoadConfig(t *testing.T) {
 	for _, tt := range []struct {
@@ -20,8 +23,45 @@ func TestLoadConfig(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg.rate != tt.rate || cfg.burst != tt.burst || cfg.upstream != tt.env["UPSTREAM_URL"] {
+			if cfg.rate != tt.rate || cfg.burst != tt.burst || cfg.upstream != tt.env["UPSTREAM_URL"] || cfg.upstreamTimeout != defaultUpstreamTimeout {
 				t.Fatalf("unexpected config: %+v", cfg)
+			}
+		})
+	}
+}
+
+func TestUpstreamTimeoutConfig(t *testing.T) {
+	for _, tt := range []struct {
+		raw  string
+		want time.Duration
+	}{
+		{"", defaultUpstreamTimeout},
+		{"500ms", 500 * time.Millisecond},
+		{"10s", 10 * time.Second},
+		{"1m", time.Minute},
+	} {
+		t.Run(tt.raw, func(t *testing.T) {
+			cfg, err := loadConfig(func(name string) string {
+				if name == "UPSTREAM_TIMEOUT" {
+					return tt.raw
+				}
+				return ""
+			})
+			if err != nil || cfg.upstreamTimeout != tt.want {
+				t.Fatalf("timeout = %v, err = %v, want %v", cfg.upstreamTimeout, err, tt.want)
+			}
+		})
+	}
+	for _, raw := range []string{"0s", "-1s", "61s", "5", "invalid", "999999999999999h"} {
+		t.Run(raw, func(t *testing.T) {
+			_, err := loadConfig(func(name string) string {
+				if name == "UPSTREAM_TIMEOUT" {
+					return raw
+				}
+				return ""
+			})
+			if err == nil {
+				t.Fatalf("accepted timeout %q", raw)
 			}
 		})
 	}
