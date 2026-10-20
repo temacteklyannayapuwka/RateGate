@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -25,6 +29,15 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		log.Fatal(err)
+	}
 	log.Printf("RateGate listening on %s", server.Addr)
-	log.Fatal(server.ListenAndServe())
+	if err := serve(ctx, server, listener, cfg.upstreamTimeout+5*time.Second); err != nil {
+		log.Fatal(err)
+	}
+	log.Print("RateGate stopped")
 }

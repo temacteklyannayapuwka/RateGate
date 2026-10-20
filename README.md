@@ -9,6 +9,7 @@ RateGate is an HTTP gateway project written in Go.
 - HTTP server listening on port 8080.
 - `GET /health` returns `200 OK` with `{"status":"ok"}`.
 - HTTP server timeouts.
+- Graceful shutdown on Ctrl+C or SIGTERM, allowing active requests to finish.
 - Reverse proxy forwarding requests to a configured upstream, preserving the method, path, query and body.
 - `502 Bad Gateway` when the upstream cannot be reached.
 - Upstream request deadlines with `504 Gateway Timeout` if the deadline expires before response headers arrive.
@@ -38,6 +39,8 @@ UPSTREAM_URL=http://localhost:9000 UPSTREAM_TIMEOUT=3s go run ./cmd/rategate
 ```
 
 The deadline includes sending the request and reading the response body. If it expires after response headers have been sent to the client, the response is interrupted; its status cannot be changed to `504`. Client cancellation also cancels the upstream request.
+
+On Ctrl+C or SIGTERM, RateGate closes its listeners and idle connections, then waits for active requests to finish. The shutdown grace period is `UPSTREAM_TIMEOUT` plus 5 seconds. If it expires, remaining connections are closed and the process exits with an error.
 
 Check the server:
 
