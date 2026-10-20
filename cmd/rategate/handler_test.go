@@ -29,7 +29,7 @@ func TestProxyForwardsRequestAndResponse(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler, err := newHandler(upstream.URL + "/base")
+	handler, err := newHandler(upstream.URL+"/base", defaultRate, defaultBurst)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestHealthDoesNotCallUpstream(t *testing.T) {
 		t.Error("health request reached upstream")
 	}))
 	defer upstream.Close()
-	handler, err := newHandler(upstream.URL)
+	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestHealthDoesNotCallUpstream(t *testing.T) {
 func TestUnavailableUpstream(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	upstream.Close()
-	handler, err := newHandler(upstream.URL)
+	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestUnavailableUpstream(t *testing.T) {
 func TestInvalidUpstream(t *testing.T) {
 	for _, raw := range []string{"", "/relative", "localhost:9000", "ftp://localhost", "http://", "http://%", "http://user:pass@localhost", "http://localhost/#fragment"} {
 		t.Run(raw, func(t *testing.T) {
-			if _, err := newHandler(raw); err == nil {
+			if _, err := newHandler(raw, defaultRate, defaultBurst); err == nil {
 				t.Fatalf("accepted invalid upstream %q", raw)
 			}
 		})

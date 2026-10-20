@@ -8,7 +8,7 @@ import (
 	"net/url"
 )
 
-func newHandler(upstream string) (http.Handler, error) {
+func newHandler(upstream string, rate, burst int) (http.Handler, error) {
 	target, err := url.Parse(upstream)
 	if err != nil || target.Hostname() == "" || (target.Scheme != "http" && target.Scheme != "https") || target.Fragment != "" || target.User != nil {
 		return nil, fmt.Errorf("UPSTREAM_URL must be an absolute HTTP or HTTPS URL without credentials or a fragment")
@@ -30,6 +30,6 @@ func newHandler(upstream string) (http.Handler, error) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte("{\"status\":\"ok\"}\n"))
 	})
-	mux.Handle("/", newLimiter().middleware(proxy))
+	mux.Handle("/", newLimiter(rate, burst).middleware(proxy))
 	return mux, nil
 }

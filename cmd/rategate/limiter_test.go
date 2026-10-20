@@ -12,7 +12,7 @@ import (
 
 func TestLimiterRefillAndIndependentKeys(t *testing.T) {
 	now := time.Unix(1000, 0)
-	l := newLimiter()
+	l := newLimiter(defaultRate, defaultBurst)
 	l.now = func() time.Time { return now }
 	for i := 0; i < 10; i++ {
 		if retry := l.allow("alice"); retry != 0 {
@@ -49,7 +49,7 @@ func TestLimiterRefillAndIndependentKeys(t *testing.T) {
 }
 
 func TestLimiterConcurrentRequests(t *testing.T) {
-	l := newLimiter()
+	l := newLimiter(defaultRate, defaultBurst)
 	l.now = func() time.Time { return time.Unix(1000, 0) }
 	var accepted atomic.Int32
 	var wg sync.WaitGroup
@@ -68,6 +68,47 @@ func TestLimiterConcurrentRequests(t *testing.T) {
 	}
 }
 
+func TestCustomLimiterRateAndBurst(t *testing.T) {
+	now := time.Unix(1000, 0)
+	l := newLimiter(4, 3)
+	l.now = func() time.Time { return now }
+	for i := 0; i < 3; i++ {
+		if l.allow("client") != 0 {
+			t.Fatal("custom burst rejected too early")
+		}
+	}
+	if retry := l.allow("client"); retry != 250*time.Millisecond {
+		t.Fatalf("retry = %v, want 250ms", retry)
+	}
+	now = now.Add(125 * time.Millisecond)
+	if retry := l.allow("client"); retry != 125*time.Millisecond {
+		t.Fatalf("retry = %v, want 125ms", retry)
+	}
+	now = now.Add(125 * time.Millisecond)
+	if l.allow("client") != 0 || l.allow("client") == 0 {
+		t.Fatal("custom rate did not replenish exactly one token")
+	}
+}
+
+func TestCleanupPreservesPartiallyRefilledBucket(t *testing.T) {
+	now := time.Unix(1000, 0)
+	l := newLimiter(1, 100)
+	l.now = func() time.Time { return now }
+	for i := 0; i < 100; i++ {
+		l.allow("client")
+	}
+	now = now.Add(time.Minute)
+	l.allow("another-client")
+	for i := 0; i < 60; i++ {
+		if l.allow("client") != 0 {
+			t.Fatal("refilled token rejected")
+		}
+	}
+	if l.allow("client") == 0 {
+		t.Fatal("cleanup reset a partially refilled budget")
+	}
+}
+
 func TestRateLimitedProxy(t *testing.T) {
 	var reached atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +116,7 @@ func TestRateLimitedProxy(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer upstream.Close()
-	handler, err := newHandler(upstream.URL)
+	handler, err := newHandler(upstream.URL, defaultRate, defaultBurst)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +142,7 @@ func TestRateLimitedProxy(t *testing.T) {
 }
 
 func TestLimiterMiddlewareRejectsExhaustedKey(t *testing.T) {
-	l := newLimiter()
+	l := newLimiter(defaultRate, defaultBurst)
 	l.now = func() time.Time { return time.Unix(1000, 0) }
 	var reached int
 	handler := l.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

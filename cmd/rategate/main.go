@@ -8,7 +8,11 @@ import (
 )
 
 func main() {
-	mux, err := newHandler(os.Getenv("UPSTREAM_URL"))
+	cfg, err := loadConfig(os.Getenv)
+	if err != nil {
+		log.Fatal(err)
+	}
+	mux, err := newHandler(cfg.upstream, cfg.rate, cfg.burst)
 	if err != nil {
 		log.Fatal(err)
 	}
