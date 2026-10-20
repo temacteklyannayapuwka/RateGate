@@ -1,5 +1,7 @@
 # RateGate
 
+[English](README.md) | [Русский](README.ru.md)
+
 RateGate is an HTTP gateway project written in Go.
 
 ## Features
