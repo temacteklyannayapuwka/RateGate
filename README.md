@@ -59,3 +59,35 @@ curl -i -H 'X-API-Key: demo-client' 'http://localhost:8080/api/items?page=1'
 Keys identify independent request budgets; they are not validated credentials and do not provide authentication. Missing, blank or longer than 256-byte keys return `400 Bad Request`. Leading and trailing whitespace is ignored. Health checks bypass the limiter.
 
 Limits are stored in memory per process and reset on restart. Idle keys are removed lazily after at least one minute, once their budgets would be fully replenished. Multiple instances do not share limits.
+
+## Docker
+
+Build the image from the repository root:
+
+```sh
+docker build -t rategate .
+```
+
+Run with an upstream service on the Docker host:
+
+```sh
+docker run --rm --name rategate \
+  -p 127.0.0.1:8080:8080 \
+  --add-host=host.docker.internal:host-gateway \
+  --stop-timeout=70 \
+  -e UPSTREAM_URL=http://host.docker.internal:9000 \
+  -e RATE_LIMIT=10 \
+  -e RATE_BURST=10 \
+  -e UPSTREAM_TIMEOUT=5s \
+  rategate
+```
+
+`localhost` inside the container refers to the container itself. On native Linux, the host service must listen on an address reachable from Docker, rather than only `127.0.0.1`. For an upstream container, attach both containers to the same Docker network and use its container name in `UPSTREAM_URL`.
+
+The final image contains a static binary and CA certificates for HTTPS upstreams, and runs as a non-root user. Go is needed only during image building. The 70-second stop timeout allows the maximum configured shutdown grace period of 65 seconds.
+
+Stop gracefully from another terminal:
+
+```sh
+docker stop rategate
+```
