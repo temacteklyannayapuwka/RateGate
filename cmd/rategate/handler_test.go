@@ -35,6 +35,7 @@ func TestProxyForwardsRequestAndResponse(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/items/a%2Fb?page=2", strings.NewReader("payload"))
 	req.Header.Set("X-Test", "forwarded")
+	req.Header.Set("X-API-Key", "test-client")
 	req.Header.Set("X-Forwarded-For", "spoofed")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, req)
@@ -68,7 +69,9 @@ func TestUnavailableUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/items", nil))
+	req := httptest.NewRequest(http.MethodGet, "/items", nil)
+	req.Header.Set("X-API-Key", "test-client")
+	handler.ServeHTTP(response, req)
 	if response.Code != http.StatusBadGateway {
 		t.Fatalf("got status %d, want 502", response.Code)
 	}

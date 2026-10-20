@@ -30,6 +30,6 @@ func newHandler(upstream string) (http.Handler, error) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte("{\"status\":\"ok\"}\n"))
 	})
-	mux.Handle("/", proxy)
+	mux.Handle("/", newLimiter().middleware(proxy))
 	return mux, nil
 }
