@@ -60,6 +60,16 @@ Keys identify independent request budgets; they are not validated credentials an
 
 Limits are stored in memory per process and reset on restart. Idle keys are removed lazily after at least one minute, once their budgets would be fully replenished. Multiple instances do not share limits.
 
+## Validation
+
+```sh
+go test -race ./...
+go vet ./...
+go build ./cmd/rategate
+```
+
+GitHub Actions checks formatting, tests, race detection and compilation on Go 1.22 and 1.26. It also builds the Docker image and checks container startup, proxying, the non-root user and graceful shutdown.
+
 ## Docker
 
 Build the image from the repository root:

@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        go: ['1.22.x', '1.26.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: false
+      - name: Check formatting
+        run: test -z "$(gofmt -l cmd)"
+      - name: Test with race detection
+        run: go test -race ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Build
+        run: go build -o "${RUNNER_TEMP}/rategate" ./cmd/rategate
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t rategate:ci .
+      - name: Check container startup, proxying and shutdown
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 9000 --bind 127.0.0.1 > "${RUNNER_TEMP}/upstream.log" 2>&1 &
+          upstream_pid=$!
+          trap 'kill "$upstream_pid" 2>/dev/null || true' EXIT
+          curl --retry 20 --retry-connrefused --retry-delay 1 --max-time 5 -fsS http://127.0.0.1:9000/go.mod > /dev/null
+          docker run -d --name rategate-ci --network host --stop-timeout=70 \
+            -e UPSTREAM_URL=http://127.0.0.1:9000 rategate:ci
+          curl --retry 20 --retry-connrefused --retry-delay 1 --max-time 5 -fsS http://127.0.0.1:8080/health | python3 -c 'import json,sys; assert json.load(sys.stdin) == {"status":"ok"}'
+          test "$(docker inspect --format '{{.Config.User}}' rategate-ci)" = '65532:65532'
+          curl --max-time 5 -fsS -H 'X-API-Key: ci-client' http://127.0.0.1:8080/go.mod | cmp - go.mod
+          test "$(curl --max-time 5 -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/go.mod)" = '400'
+          docker stop rategate-ci
+          test "$(docker inspect --format '{{.State.ExitCode}}' rategate-ci)" = '0'
+      - name: Container logs
+        if: always()
+        run: docker logs rategate-ci 2>/dev/null || true
+      - name: Remove test container
+        if: always()
+        run: docker rm -f rategate-ci >/dev/null 2>&1 || true
